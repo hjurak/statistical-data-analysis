@@ -1,0 +1,281 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Loading files
+```{r}
+if (!requireNamespace("nortest", quietly = TRUE)) {
+  install.packages("nortest")
+}
+
+# Load the nortest package
+library(nortest)
+```
+This is a project for SAP
+```{r}
+if (!requireNamespace("lawstat", quietly = TRUE)) {
+  install.packages("lawstat")
+}
+
+# Load the lawstat package
+library(lawstat)
+```
+
+```{r}
+
+
+library(readr)
+library(dplyr)
+
+# Pronađi i zamijeni izuzetke
+zamijeni_izuzetke <- function(stupac) {
+  if (is.numeric(stupac)) {
+    # Kvartili i IQR
+    Q1 <- quantile(stupac, 0.25, na.rm = TRUE)
+    Q3 <- quantile(stupac, 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+
+    # Granice
+    donja_granica <- Q1 - 1.5 * IQR
+    gornja_granica <- Q3 + 1.5 * IQR
+
+  
+    zamjenska_varijabla <- NA
+
+    # Petlja kroz svaki redak stupca
+    for (i in 1:length(stupac)) {
+      if (!is.null(stupac[i]) & !is.na(stupac[i])){
+        if(stupac[i] < donja_granica || stupac[i] > gornja_granica) {
+          # Jednom računaj zamjensku varijablu za stupac
+          if (is.na(zamjenska_varijabla)) {
+            # Provijeri distribuciju podataka u stupcu
+            neizuzetci <- stupac[stupac >= donja_granica & stupac <= gornja_granica]
+            if (length(neizuzetci) > 3 && shapiro.test(neizuzetci)$p.value > 0.05) {
+              zamjenska_varijabla <- mean(neizuzetci, na.rm = TRUE)
+            } else {
+              zamjenska_varijabla <- median(neizuzetci, na.rm = TRUE)
+            }
+          }
+          # Zamijeni vrijednost
+          stupac[i] <- zamjenska_varijabla
+        }
+      }
+    }
+  }
+  return(stupac)
+}
+
+# Zamjena nedostajećih vrijednosti 
+zamijeni_nedostajuće_vrijednosti <- function(stupac) {
+  if (is.numeric(stupac)) {
+    if (shapiro.test(stupac)$p.value > 0.05 && sum(!is.na(stupac)) > 3) {
+      # Normalna distribucija prema shapiro testu, zamijeni nedostajuće podatke sa srednjom vrijednosću
+      stupac[is.null(stupac)] <- mean(stupac, na.rm = TRUE)
+      stupac[is.na(stupac)] <- mean(stupac, na.rm = TRUE)
+    } else {
+      # Distribucija nije normalna, zamijeni nedostajuće podatke sa prosjekom
+      stupac[is.null(stupac)] <- median(stupac, na.rm = TRUE)
+      stupac[is.na(stupac)] <- median(stupac, na.rm = TRUE)
+    }
+  }
+  return(stupac)
+}
+
+# Učitavanje i preprocesiranje CSV-a
+učitaj_csv <- function(file_path) {
+  data <- read_csv(file_path)
+  data <- type_convert(data) # Definira tip podataka u svakom stupcu
+  
+  data <- data %>%
+    mutate(across(where(is.numeric), ~zamijeni_izuzetke(.))) %>% # Zamijeni nedostajuće vrijednosti s srednjom vrijednosti / prosjekom. Mijenja (mutate) svaki stupac (across) koji ima (where) numerički podatak i na svakom od njih ('.') izvrši funckiju replace_outliers
+    
+    mutate(across(where(is.numeric), ~zamijeni_nedostajuće_vrijednosti(.))) # Zamijeni nedostajuće vrijednosti
+  
+  return(data)
+}
+```
+
+```{r}
+# Učitaj podatke za 2022.
+file_path1 <- "C:/Users/Hana/Desktop/SAP_projekt/WHR_2022.csv"
+data_22 <- učitaj_csv(file_path1)
+
+# Učitaj podatke za 2023.
+file_path2 <- "C:/Users/Hana/Desktop/SAP_projekt/WHR_2023.csv"
+data_23 <- učitaj_csv(file_path2)
+
+# Prikaz podataka
+print(data_22)
+print(data_23)
+```
+#2.Možemo li temeljem drugih dostupnih varijabli predvidjeti konzumaciju alkohola po zemljama?
+
+##Jednostavna linearna regresija
+
+###Utjecaj nezavisne varijable na zavisnu 
+
+Ispituju se određene mjere i promatra se njihov “utjecaj” na konzumaciju alkohola po zemljama.
+Odabrane su sljedeće mjere:koeficijent sreće, gdp po glavi stanovnika, socijalna skrb, očekivanje zdravog života, darežljivost, percepcija korupcije, indeks stope kriminala i Gini koeficijent od Svjeske banke.
+Utjecaj pojedine nezavisne varijable na zavisnu varijablu (konzumacija alkohola) prikazan je pomoću scatterplot-a.
+
+```{r}
+par(mfrow=c(1,2),mai=c(1,1,1,1)) 
+plot(data_23$"Ladder score",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Ladder score",ylab="Alcohol consumption", cex.main=2,cex.lab=2,cex.axis=2)#ladder/alcohol
+plot(data_23$"GDP per capita",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="GDP per capita",ylab="Alcohol consumption", 
+cex.main=2,cex.lab=2,cex.axis=2)#gdp/alcohol
+plot(data_23$"Social support",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Social support",ylab="Alcohol consumption", 
+cex.main=2,cex.lab=2,cex.axis=2)#socsup/alcohol
+plot(data_23$"Healthy life expectancy",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Healthy life expectancy",ylab="Alcohol consumption", cex.main=2,cex.lab=2,cex.axis=2)#health/alcohol
+plot(data_23$"Generosity",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Generosity",ylab="Alcohol consumption", cex.main=2,cex.lab=2,cex.axis=2)#Generosity/alcohol
+plot(data_23$"Perceptions of corruption",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Perceptions of corruption",ylab="Alcohol consumption", cex.main=2,cex.lab=2,cex.axis=2)#Perceptions of corruption/alcohol
+plot(data_23$"Crime rate Crime Index",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Crime rate Crime Index",ylab="Alcohol consumption", cex.main=2,cex.lab=2,cex.axis=2)#Crime rate Crime Index/alcohol
+plot(data_23$"Gini Coefficient - World Bank",data_23$"Alcohol consumption Both Sexes (L/year)", xlab="Gini Coefficient - World Bank",ylab="Alcohol consumption", cex.main=2,cex.lab=2,cex.axis=2)#Generosity/alcohol
+
+```
+Rezultati upućuju na to da bi koeficijent sreće, gdp po glavi stanovnika, socijalna skrb, očekivanje zdravog života i percepcija korupcije mogli imati utjecaj na konzumaciju alkohola u državi, dok darežljivost, indeks stope kriminala i Gini koeficijent od Svjeske banke nemaju utjecaja na konzumaciju alkohola po državi.
+\pagebreak
+###Korelacijski koeficijent i veza s linearnim modelom
+
+Korelacijski koeficijent opisuje smjer i prirodu veze dviju varijabli.
+Izvršit ćemo korelacijski test nad varijablama za koje se čini da imaju utjecaj na konzumaciju alkohola po državi.
+```{r}
+cor.test(data_23$"Ladder score",data_23$"Alcohol consumption Both Sexes (L/year)")
+cor.test(data_23$"GDP per capita",data_23$"Alcohol consumption Both Sexes (L/year)")
+cor.test(data_23$"Social support",data_23$"Alcohol consumption Both Sexes (L/year)")
+cor.test(data_23$"Healthy life expectancy",data_23$"Alcohol consumption Both Sexes (L/year)")
+cor.test(data_23$"Perceptions of corruption",data_23$"Alcohol consumption Both Sexes (L/year)")
+```
+Najveću korelaciju sa konzumacijom alkohola po državi pokazuje socijalna skrb. P-vrijednosti svih varijabli osim percepcije korupcije ukazuju na to da postoji veza između njih i konzumacije alkohola po državama.
+\pagebreak
+###Primjena modela linearne regresije
+
+U nastavku je isproban model jednostavne linearne regresije - procjenjen je odnos jedne nezavisne varijable (regresora) i jedne zavisne varijable.
+
+Svi modeli prikazani su grafički zajedno sa nezavisnom varijablom kojom predviđaju konzumaciju alkohola po državi.
+
+```{r}
+fit.ladder <- lm(`Alcohol consumption Both Sexes (L/year)` ~ `Ladder score`, data = data_23)
+
+# Graphical representation of the data
+plot(data_23$`Ladder score`, data_23$`Alcohol consumption Both Sexes (L/year)`,
+     xlab = "Ladder score", ylab = "Alcohol consumption (L/year)", cex.main = 1, cex.lab = 1, cex.axis = 1)
+
+# Overlaying the fitted values from the linear regression model in red
+lines(data_23$`Ladder score`, fit.ladder$fitted.values, col = 'red')
+
+```
+```{r}
+fit.gdp <- lm(`Alcohol consumption Both Sexes (L/year)` ~ `GDP per capita`, data = data_23)
+
+# Graphical representation of the data
+plot(data_23$`GDP per capita`, data_23$`Alcohol consumption Both Sexes (L/year)`,
+     xlab = "GDP per capita", ylab = "Alcohol consumption (L/year)", cex.main = 1, cex.lab = 1, cex.axis = 1)
+
+# Overlaying the fitted values from the linear regression model in red
+lines(data_23$`GDP per capita`, fit.gdp$fitted.values, col = 'red')
+
+```
+```{r}
+fit.ss <- lm(`Alcohol consumption Both Sexes (L/year)` ~ `Social support`, data = data_23)
+
+# Graphical representation of the data
+plot(data_23$`Social support`, data_23$`Alcohol consumption Both Sexes (L/year)`,
+     xlab = "Social support", ylab = "Alcohol consumption (L/year)", cex.main = 1, cex.lab = 1, cex.axis = 1)
+
+# Overlaying the fitted values from the linear regression model in red
+lines(data_23$`Social support`, fit.ss$fitted.values, col = 'red')
+
+```
+```{r}
+fit.hle <- lm(`Alcohol consumption Both Sexes (L/year)` ~ `Healthy life expectancy`, data = data_23)
+
+# Graphical representation of the data
+plot(data_23$`Healthy life expectancy`, data_23$`Alcohol consumption Both Sexes (L/year)`,
+     xlab = "Healthy life expectancy", ylab = "Alcohol consumption (L/year)", cex.main = 1, cex.lab = 1, cex.axis = 1)
+
+# Overlaying the fitted values from the linear regression model in red
+lines(data_23$`Healthy life expectancy`, fit.hle$fitted.values, col = 'red')
+
+```
+\pagebreak
+
+Da bi smo zadržali modele, potrebno ih je dalje analizirati i
+usporediti. Prvo moramo provjeriti da li su narušene pretpostavke modela
+jednostavne linearne regresije. Potrebno je provjeriti normalnost
+reziduala i homogenost varijance. Ukoliko je nešto od toga narušeno,
+model se odbacuje. Normalnost reziduala ćemo provjeriti pomoću
+kvantil-kvantil plota grafički, a statistički pomoću
+Kolmogorov-Smirnovljevog testa ili Lilifeforceovom inačicom. Razina
+signifikantnosti za svaki test će biti 5%. Ova funkcija koristi se za
+provjeru normalnosti reziduala i homogenosti varijance u modelima
+linearne regresije.
+U tu svrhu uvodimo sljedeću funkciju
+```{r function}
+
+normality_homogenity <- function(selected.model){
+  
+  par(mfrow=c(3,2), mai=c(1,1,1,1))
+  
+  #1 prikaz reziduala po indeksu danom u podacima
+  p1 = plot(selected.model$residuals,
+       main="Residuals plot (1.)", xlab = "Index", ylab = "Residuals",
+       cex.main = 3, cex.lab = 3, cex.axis = 2)
+  
+  #2 prikaz reziduala u ovisnosti o procjenama modela
+  p2 = plot(selected.model$fitted.values,selected.model$residuals,
+       main="Standardized residuals plot (2.)", xlab = "Fitted values", ylab = "Residuals", 
+       cex.main = 3, cex.lab = 3, cex.axis = 2) 
+  
+  #3 histogram reziduala
+  hist((selected.model$residuals), 
+       xlab = "Residuals", main = "Histogram of residuals (3.)", 
+       cex.main = 3, cex.lab = 3, cex.axis = 2)
+  
+  #4 histogram standardiziranih reziduala
+  hist(rstandard(selected.model),
+       xlab = "Standardized residuals", main = "Histogram of standardized residuals (4.)", 
+       cex.main = 3, cex.lab = 3, cex.axis = 2)
+  
+  #5 q-q plot standardiziranih reziduala s linijom normalne distribucije
+  qqnorm(rstandard(selected.model),
+         main="Standardized residuals q-q plot (5.)", cex.main = 3, cex.lab = 3, cex.axis = 2)
+  qqline(rstandard(selected.model))
+
+  #6 Kolmogorov-Smirnovljev test - usporedba standardiziranih reziduala s normalnom razdiobom
+  print(ks.test(rstandard(selected.model),'pnorm'))
+  
+  #7 Lillieforce inaciča KS-testa
+  print(lillie.test(rstandard(selected.model)))
+
+}
+```
+\pagebreak
+###Koeficijent sreće
+```{r, warning=FALSE, fig.height=20,fig.width=20}
+
+
+normality_homogenity(fit.ladder)
+```
+1.Reziduali se čine jednoliko raspršeno. 2. Reziduali se čine jednoliko raspršeni.3. Čini se da su reziduali raspodijeljeni simetričnom normalnom distribucijom. 4. Čini se da su reziduali podijeljeni dvostranom normalnom distribucijom. 5. Oblik qq-plota ukazuje na dvostranu normalnu distribuciju s debelim repovima. KM TEST i LILLIE TEST ukazuju da distribucija reziduala odgovara normalnoj distribuciji(p-value = 0.9281, p-value = 0.6737)
+\pagrebreak
+### Bruto društveni proizvod
+```{r, warning=FALSE, fig.height=20,fig.width=20}
+normality_homogenity(fit.gdp)
+```
+1.Reziduali se čine jednoliko raspršeno. 2. Reziduali se čine jednoliko raspršeni.3. Čini se da su reziduali raspodijeljeni simetričnom normalnom distribucijom. 4. Čini se da su reziduali podijeljeni normalnom distribucijom. 5. Oblik qq-plota ukazuje na normalnu distribuciju s debelim repovima. KM TEST i LILLIE TEST ukazuju da distribucija reziduala odgovara normalnoj distribuciji(p-value = 0.9722, p-value = 0.7868)
+\pagebreak
+###Socijalna skrb
+```{r, warning=FALSE, fig.height=20,fig.width=20}
+normality_homogenity(fit.ss)
+```
+1.Reziduali se čine jednoliko raspršeno. 2. Reziduali se ne čine jednoliko raspršeni.3. Čini se da su reziduali raspodijeljeni simetričnom normalnom distribucijom. 4. Čini se da su reziduali podijeljeni normalnom distribucijom. 5. Oblik qq-plota ukazuje na normalnu distribuciju s debelim repovima. KM TEST i LILLIE TEST ukazuju da distribucija reziduala odgovara normalnoj distribuciji(p-value = 0.9147, p-value = 0.6377)
+\pagebreak
+###Očekivanje zdravog života
+```{r, warning=FALSE, fig.height=20,fig.width=20}
+normality_homogenity(fit.hle)
+```
+1.Reziduali se čine jednoliko raspršeno. 2. Reziduali se ne čine jednoliko raspršeni.3. Čini se da su reziduali raspodijeljeni simetričnom normalnom distribucijom. 4. Čini se da su reziduali podijeljeni dvostranom normalnom distribucijom. 5. Oblik qq-plota ne ukazuje na normalnu distribuciju s debelim repovima. KM TEST i LILLIE TEST ukazuju da distribucija reziduala odgovara normalnoj distribuciji(p-value = 0.9575, p-value = 0.7798)
+###Zaključak
+Svi modeli zadovoljavaju uvjete jednostavne linearne regresije, pa možemo reći da se svaki može uzeti kao model linearne regresije.
+

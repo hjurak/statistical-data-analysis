@@ -1,0 +1,94 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Loading files
+
+This is a project for SAP
+
+```{r}
+library(readr)
+library(dplyr)
+
+# Pronađi i zamijeni izuzetke
+zamijeni_izuzetke <- function(stupac) {
+  if (is.numeric(stupac)) {
+    # Kvartili i IQR
+    Q1 <- quantile(stupac, 0.25, na.rm = TRUE)
+    Q3 <- quantile(stupac, 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+
+    # Granice
+    donja_granica <- Q1 - 1.5 * IQR
+    gornja_granica <- Q3 + 1.5 * IQR
+
+  
+    zamjenska_varijabla <- NA
+
+    # Petlja kroz svaki redak stupca
+    for (i in 1:length(stupac)) {
+      if (!is.null(stupac[i]) & !is.na(stupac[i])){
+        if(stupac[i] < donja_granica || stupac[i] > gornja_granica) {
+          # Jednom računaj zamjensku varijablu za stupac
+          if (is.na(zamjenska_varijabla)) {
+            # Provijeri distribuciju podataka u stupcu
+            neizuzetci <- stupac[stupac >= donja_granica & stupac <= gornja_granica]
+            if (length(neizuzetci) > 3 && shapiro.test(neizuzetci)$p.value > 0.05) {
+              zamjenska_varijabla <- mean(neizuzetci, na.rm = TRUE)
+            } else {
+              zamjenska_varijabla <- median(neizuzetci, na.rm = TRUE)
+            }
+          }
+          # Zamijeni vrijednost
+          stupac[i] <- zamjenska_varijabla
+        }
+      }
+    }
+  }
+  return(stupac)
+}
+
+# Zamjena nedostajećih vrijednosti 
+zamijeni_nedostajuće_vrijednosti <- function(stupac) {
+  if (is.numeric(stupac)) {
+    if (shapiro.test(stupac)$p.value > 0.05 && sum(!is.na(stupac)) > 3) {
+      # Normalna distribucija prema shapiro testu, zamijeni nedostajuće podatke sa srednjom vrijednosću
+      stupac[is.null(stupac)] <- mean(stupac, na.rm = TRUE)
+      stupac[is.na(stupac)] <- mean(stupac, na.rm = TRUE)
+    } else {
+      # Distribucija nije normalna, zamijeni nedostajuće podatke sa prosjekom
+      stupac[is.null(stupac)] <- median(stupac, na.rm = TRUE)
+      stupac[is.na(stupac)] <- median(stupac, na.rm = TRUE)
+    }
+  }
+  return(stupac)
+}
+
+# Učitavanje i preprocesiranje CSV-a
+učitaj_csv <- function(file_path) {
+  data <- read_csv(file_path)
+  data <- type_convert(data) # Definira tip podataka u svakom stupcu
+  
+  data <- data %>%
+    mutate(across(where(is.numeric), ~zamijeni_izuzetke(.))) %>% # Zamijeni nedostajuće vrijednosti s srednjom vrijednosti / prosjekom. Mijenja (mutate) svaki stupac (across) koji ima (where) numerički podatak i na svakom od njih ('.') izvrši funckiju replace_outliers
+    
+    mutate(across(where(is.numeric), ~zamijeni_nedostajuće_vrijednosti(.))) # Zamijeni nedostajuće vrijednosti
+  
+  return(data)
+}
+```
+
+```{r}
+# Učitaj podatke za 2022.
+file_path1 <- "~/Desktop/SAP_projekt/WHR_2022.csv"
+data_22 <- učitaj_csv(file_path1)
+
+# Učitaj podatke za 2023.
+file_path2 <- "~/Desktop/SAP_projekt/WHR_2023.csv"
+data_23 <- učitaj_csv(file_path2)
+
+# Prikaz podataka
+print(data_22)
+print(data_23)
+```

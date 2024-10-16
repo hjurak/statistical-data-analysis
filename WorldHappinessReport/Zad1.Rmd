@@ -1,0 +1,189 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Loading files
+
+This is a project for SAP
+
+```{r}
+library(readr)
+library(dplyr)
+
+# Pronađi i zamijeni izuzetke
+zamijeni_izuzetke <- function(stupac) {
+  if (is.numeric(stupac)) {
+    # Kvartili i IQR
+    Q1 <- quantile(stupac, 0.25, na.rm = TRUE)
+    Q3 <- quantile(stupac, 0.75, na.rm = TRUE)
+    IQR <- Q3 - Q1
+
+    # Granice
+    donja_granica <- Q1 - 1.5 * IQR
+    gornja_granica <- Q3 + 1.5 * IQR
+
+  
+    zamjenska_varijabla <- NA
+
+    # Petlja kroz svaki redak stupca
+    for (i in 1:length(stupac)) {
+      if (!is.null(stupac[i]) & !is.na(stupac[i])){
+        if(stupac[i] < donja_granica || stupac[i] > gornja_granica) {
+          # Jednom računaj zamjensku varijablu za stupac
+          if (is.na(zamjenska_varijabla)) {
+            # Provijeri distribuciju podataka u stupcu
+            neizuzetci <- stupac[stupac >= donja_granica & stupac <= gornja_granica]
+            if (length(neizuzetci) > 3 && shapiro.test(neizuzetci)$p.value > 0.05) {
+              zamjenska_varijabla <- mean(neizuzetci, na.rm = TRUE)
+            } else {
+              zamjenska_varijabla <- median(neizuzetci, na.rm = TRUE)
+            }
+          }
+          # Zamijeni vrijednost
+          stupac[i] <- zamjenska_varijabla
+        }
+      }
+    }
+  }
+  return(stupac)
+}
+
+# Zamjena nedostajećih vrijednosti 
+zamijeni_nedostajuće_vrijednosti <- function(stupac) {
+  if (is.numeric(stupac)) {
+    if (shapiro.test(stupac)$p.value > 0.05 && sum(!is.na(stupac)) > 3) {
+      # Normalna distribucija prema shapiro testu, zamijeni nedostajuće podatke sa srednjom vrijednosću
+      stupac[is.null(stupac)] <- mean(stupac, na.rm = TRUE)
+      stupac[is.na(stupac)] <- mean(stupac, na.rm = TRUE)
+    } else {
+      # Distribucija nije normalna, zamijeni nedostajuće podatke sa prosjekom
+      stupac[is.null(stupac)] <- median(stupac, na.rm = TRUE)
+      stupac[is.na(stupac)] <- median(stupac, na.rm = TRUE)
+    }
+  }
+  return(stupac)
+}
+
+# Učitavanje i preprocesiranje CSV-a
+učitaj_csv <- function(file_path) {
+  data <- read_csv(file_path)
+  data <- type_convert(data) # Definira tip podataka u svakom stupcu
+  
+  data <- data %>%
+    mutate(across(where(is.numeric), ~zamijeni_izuzetke(.))) %>% # Zamijeni nedostajuće vrijednosti s srednjom vrijednosti / prosjekom. Mijenja (mutate) svaki stupac (across) koji ima (where) numerički podatak i na svakom od njih ('.') izvrši funckiju replace_outliers
+    
+    mutate(across(where(is.numeric), ~zamijeni_nedostajuće_vrijednosti(.))) # Zamijeni nedostajuće vrijednosti
+  
+  return(data)
+}
+```
+
+
+```{r}
+# Učitaj podatke za 2022.
+file_path1 <- "C:/Users/Hana/Documents/FER/Diplomski/1. semestar/Statistička analiza podataka/Projekt/WHR_2022.csv"
+data_22 <- učitaj_csv(file_path1)
+
+# Učitaj podatke za 2023.
+file_path2 <- "C:/Users/Hana/Documents/FER/Diplomski/1. semestar/Statistička analiza podataka/Projekt/WHR_2023.csv"
+data_23 <- učitaj_csv(file_path2)
+
+# Prikaz podataka
+print(data_22)
+print(data_23)
+```
+# Je li razina sreće u publikaciji za 2023. veća ili manja u usporedbi s istraživanjem provedenim godinu ranije?
+
+
+Planiramo provesti t-test za nezavisne uzorke kako bismo usporedili razinu sreće u publikaciji za 2023. s istraživanjem provedenim godinu ranije. Prije provođenja testa, moramo ispuniti određene pretpostavke, uključujući normalnost podataka i homogenost varijanci. Želimo osigurati da oba uzorka imaju približno normalnu distribuciju i slične varijance kako bismo osigurali valjanost rezultata.
+
+Prvi potrebni korak je obrada i usklađivanje podataka o zemljama iz dva različita vremenska razdoblja 2022. i 2023. godine, istraživanje promjena u nazivima zemalja te identifikacija zemalja koje su prisutne ili odsutne u samo jednom od skupova podataka.
+
+```{r}
+# Uklonanje '*' s kraja naziva zemalja u data_2022
+data_22$'Modified Country' <- gsub("\\*$", "", data_22$Country)
+
+# Zamjena "Turkey" s "Turkiye"
+data_22_cleaned <- data_22 %>%
+  mutate(`Modified Country` = ifelse(`Modified Country` == "Turkey", "Turkiye", `Modified Country`))
+
+# Zamjena "Palestinian Territories" s "State of Palestine"
+data_22_cleaned <- data_22_cleaned %>%
+  mutate(`Modified Country` = ifelse(`Modified Country` == "Palestinian Territories", "State of Palestine", `Modified Country`))
+
+# Pronalaženje zemalja koje su samo u jednom skupu podataka
+unique_countries_22 <- unique(data_22_cleaned$`Modified Country`)
+unique_countries_23 <- unique(data_23$`Country name`)
+
+countries_only_in_22 <- setdiff(unique_countries_22, unique_countries_23)
+countries_only_in_23 <- setdiff(unique_countries_23, unique_countries_22)
+
+# Uklananje zemalja koje su samo u jednom skupu podataka
+data_22_filtered <- data_22_cleaned[data_22_cleaned$`Modified Country` %in% intersect(unique_countries_22, unique_countries_23), ]
+data_23_filtered <- data_23[data_23$`Country name` %in% intersect(unique_countries_22, unique_countries_23), ]
+
+# Ispis zemlji koje su samo u jednom skupu podataka
+cat("Zemlje samo u 2022. godini:", toString(countries_only_in_22), "\n")
+cat("Zemlje samo u 2023. godini:", toString(countries_only_in_23), "\n")
+
+```
+Izdvajanje relevantnih podataka o sreći iz različitih godina, što olakšava daljnju analizu podataka između te dvije različite godine.
+
+```{r}
+happiness_2022 <- data_22_filtered$'Happiness score'
+happiness_2023 <- data_23_filtered$'Ladder score'
+```
+
+Daljnji korak je crtanje podataka. Crtanjem grafova ne možemo jednoznačno potvrditi pretpostavke nužne za provođenje našeg testa, no vizualna analiza može nam pomoći u donošenju zaključka o istima.
+
+```{r}
+# Crtanje Boxplot za varijable happiness_2022 i happiness_2023
+boxplot(happiness_2022, happiness_2023, names = c("2022", "2023"), main = "Boxplot of Happiness Score")
+```
+```{r}
+# Crtanje histograma za varijable happiness_2022 i happiness_2023
+par(mfrow = c(1, 2))
+hist(happiness_2022, main = "Histogram of Happiness 2022", col = "lightblue")
+hist(happiness_2023, main = "Histogram of Happiness 2023", col = "lightgreen")
+```
+
+```{r}
+# Cratanje Q-Q za varijable happiness_2022 i happiness_2023
+par(mfrow = c(1, 2))
+qqnorm(happiness_2022, main = "Q-Q Plot of Happiness 2022")
+qqline(happiness_2022, col = 2)
+qqnorm(happiness_2023, main = "Q-Q Plot of Happiness 2023")
+qqline(happiness_2023, col = 2)
+```
+Kako bismo potvrdili normalnost podataka, izvršit ćemo Lilliefors test, koji predstavlja varijaciju Kolmogorov-Smirnov testa za ispitivanje normalnosti distribucije.
+
+```{r}
+# Testiranje normalnosti za sreću u 2022. i 2023. godini koristeći Lilliefors test
+install.packages("nortest")
+library(nortest)
+lillie.test(happiness_2022)
+lillie.test(happiness_2023)
+```
+S obzirom na alfa od 5%, možemo zaključiti da nema dovoljno statističkih dokaza za odbacivanje hipoteze da podaci dolaze iz normalne distribucije za obje godine. Pretpostavljamo normalnost podataka te nastavljamo dalje s ispitivanjem.
+
+Preostaje nam još provjeriti homogenost varijanci koristeći Bartlettov test, koji ispituje hipotezu H0 da su sve varijance u populacijama jednake.
+
+```{r}
+# Test homogenosti varijanci 2022. i 2023. godini koristeći Bartlett test
+bartlett.test(list(happiness_2022, happiness_2023))
+```
+ S obzirom na visoku p-vrijednost, nemamo dovoljno statističkih dokaza za odbacivanje nul hipoteze. Dakle, možemo pretpostaviti homogenost varijanci između tih skupova podataka, što znači da se varijance podataka u obje godine smatraju sličnima na razini značajnosti od 5%.
+ 
+
+
+```{r}
+# Dvostrani t test
+t_test_result <- t.test(happiness_2022, happiness_2023, paired = TRUE)
+
+# Print the result
+print(t_test_result)
+```
+**Zaključak:** : Pareni t-test pokazuje statistički značajnu razliku u razini sreće između 2022. i 2023. godine. Budući da je p-vrijednost znatno manja od alfa razine od 5%, odbacujemo nul hipotezu o jednakosti srednjih vrijednosti.
+
+Stoga, na temelju ovog testa, možemo zaključiti da postoji statistički značajna razlika u razini sreće između 2022. i 2023. godine, pri čemu je srednja vrijednost sreće u 2023. godini prosječno viša za 0.0443939.
